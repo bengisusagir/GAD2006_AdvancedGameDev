@@ -54,6 +54,9 @@ public:
 
 	EGridState GridState;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Grid")
+	bool bVisited;
+
 	UFUNCTION()
 	void SetState(EGridState NewState);
 

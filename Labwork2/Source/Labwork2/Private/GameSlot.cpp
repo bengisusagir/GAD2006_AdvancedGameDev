@@ -46,6 +46,7 @@ AGameSlot::AGameSlot()
 
 	SetState(EGridState::GS_Default);
 	Unit = nullptr;
+	bVisited = false;
 }
 
 // Called when the game starts or when spawned

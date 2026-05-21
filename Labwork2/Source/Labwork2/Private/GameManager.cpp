@@ -54,6 +54,8 @@ void AGameManager::CreateLevelActors(FSLevelInfo& Info)
 				if (Slot->Unit && Slot->Unit->IsControlledByThePlayer())
 				{
 					ThePlayer = Slot->Unit;
+					Slot->bVisited = true;
+					Slot->SetState(EGridState::GS_Highlighted);
 				}
 			}
 		}
@@ -73,7 +75,7 @@ void AGameManager::OnActorClicked(AActor* Actor, FKey button)
 		return;
 	}
 
-	if (Slot->Unit == nullptr && ThePlayer->Slot)
+	if (Slot->Unit == nullptr && ThePlayer->Slot && !Slot->bVisited)
 	{
 		TSharedRef<MoveCommand> Cmd = MakeShared<MoveCommand>(ThePlayer->Slot->GridPosition, Slot->GridPosition);
 		CommandPool.Add(Cmd);

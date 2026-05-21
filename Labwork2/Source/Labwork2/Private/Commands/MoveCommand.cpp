@@ -24,6 +24,7 @@ void MoveCommand::Execute()
 		AUnitBase* UnitA = SlotA->Unit;
 		check(UnitA);
 		UnitA->AssignToSlot(SlotB);
+		SlotB->bVisited = true;
 		SlotB->SetState(EGridState::GS_Highlighted);
 	}
 }
@@ -38,6 +39,7 @@ void MoveCommand::Revert()
 		AUnitBase* UnitB = SlotB->Unit;
 		check(UnitB);
 		UnitB->AssignToSlot(SlotA);
+		SlotB->bVisited = false;
 		SlotB->SetState(EGridState::GS_Default);
 	}
 }
