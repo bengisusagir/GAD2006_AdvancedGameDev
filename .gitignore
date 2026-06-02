@@ -96,6 +96,10 @@ Meshes/
 Textures/
 StarterContent/
 Audio/
+Labwork3/Content/Materials/
+Labwork3/Content/Models/
+Labwork3/Content/Textures/
+Labwork3/Content/UI/
 
 # default Unreal Engine template folders
 LevelPrototyping/
