@@ -6,6 +6,7 @@
 #include "GameFramework/Character.h"
 #include "Runtime/Engine/Classes/Engine/DataTable.h"
 #include "Net/UnrealNetwork.h"
+#include "NetGameInstance.h"
 #include "NetBaseCharacter.generated.h"
 
 class USkeletalMesh;
@@ -22,7 +23,7 @@ enum class EBodyPart : uint8
 	BP_Hands = 3,
 	BP_Legs = 4,
 	BP_Beard = 5,
-	BP_Eyebrows = 6,
+	BP_BodyType = 6,
 	BP_COUNT = 7,
 };
 
@@ -36,33 +37,6 @@ struct FSMeshAssetList : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TArray<UStaticMesh*> ListStatic;
-};
-
-USTRUCT(BlueprintType)
-struct FSBodyPartSelection
-{
-	GENERATED_USTRUCT_BODY()
-
-	UPROPERTY()
-	int Indices[(int)EBodyPart::BP_COUNT];
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	bool isFemale;
-};
-
-USTRUCT(BlueprintType)
-struct FSPlayerInfo
-{
-	GENERATED_USTRUCT_BODY()
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	FText Nickname;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	FSBodyPartSelection BodyParts;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	bool Ready;
 };
 
 UCLASS()
@@ -94,9 +68,6 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void StopRunning();
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing = OnRep_PlayerInfoChanged)
-	FSBodyPartSelection PartSelection;
-
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_IsRunning)
 	bool bIsRunning;
 
@@ -107,34 +78,53 @@ public:
 	void Server_SetRunning(bool bRunning);
 
 	UFUNCTION()
-	void OnRep_PlayerInfoChanged();
-
-	UFUNCTION()
 	void OnRep_IsRunning();
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-private:
-	UPROPERTY()
+	UPROPERTY(BlueprintReadOnly, Category = "Player Info")
+	FSPlayerInfo Data;
+
+	UPROPERTY(BlueprintReadOnly)
+	bool PlayerInfoReceived;
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void OnPlayerInfoChanged();
+
+	UFUNCTION(BlueprintPure)
+	FString GetCustomizationData();
+
+	UFUNCTION(BlueprintCallable)
+	void ParseCustomizationData(FString BodyPartData);
+
+	UFUNCTION()
+	void CheckPlayerState();
+
+	UFUNCTION()
+	void CheckPlayerInfo();
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	USkeletalMeshComponent* PartFace;
 
-	UPROPERTY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	UStaticMeshComponent* PartHair;
 
-	UPROPERTY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	UStaticMeshComponent* PartBeard;
 
-	UPROPERTY()
-	UStaticMeshComponent* PartEyebrows;
-
-	UPROPERTY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	UStaticMeshComponent* PartEyes;
 
-	UPROPERTY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	USkeletalMeshComponent* PartHands;
 
-	UPROPERTY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	USkeletalMeshComponent* PartLegs;
+
+private:
+	int BodyPartIndices[(int)EBodyPart::BP_COUNT];
+
+	FTimerHandle ClientDataCheckTimer;
 
 	static FSMeshAssetList* GetBodyPartList(EBodyPart part, bool isFemale);
 

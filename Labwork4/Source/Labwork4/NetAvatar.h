@@ -26,6 +26,9 @@ public:
 	UPROPERTY(EditAnywhere)
 	USpringArmComponent* SpringArm;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	float MovementScale;
+
 	virtual void BeginPlay() override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
