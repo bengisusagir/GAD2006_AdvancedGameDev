@@ -20,6 +20,35 @@ ANetGameMode::ANetGameMode()
 	TotalPlayerCount = 0;
 	TotalGames = 0;
 	PlayerStartIndex = 0;
+	CatcherPlayerIndex = -1;
+	LastBluePlayerIndex = -1;
+}
+
+void ANetGameMode::BeginPlay()
+{
+	Super::BeginPlay();
+
+	FString MapName = GetWorld()->GetMapName();
+	if (MapName.Contains(TEXT("Lobby")))
+	{
+		return;
+	}
+
+	ANetGameState* GState = GetGameState<ANetGameState>();
+	if (GState)
+	{
+		GState->RemainingTime = 30.0f;
+	}
+
+	GetWorld()->GetTimerManager().SetTimer(GameTimerHandle, this, &ANetGameMode::OnGameTimerExpired, 30.0f, false);
+	GetWorld()->GetTimerManager().SetTimer(CountdownTimerHandle, this, &ANetGameMode::UpdateRemainingTime, 1.0f, true);
+}
+
+void ANetGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	Super::EndPlay(EndPlayReason);
+	GetWorld()->GetTimerManager().ClearTimer(GameTimerHandle);
+	GetWorld()->GetTimerManager().ClearTimer(CountdownTimerHandle);
 }
 
 AActor* ANetGameMode::ChoosePlayerStart_Implementation(AController* Player)
@@ -36,13 +65,31 @@ AActor* ANetGameMode::AssignTeamAndPlayerStart(AController* Player)
 	{
 		if (TotalGames == 0)
 		{
+			// First game: First connected player is Blue, others are Red.
 			State->TeamID = TotalPlayerCount == 0 ? EPlayerTeam::TEAM_Blue : EPlayerTeam::TEAM_Red;
 			State->PlayerIndex = TotalPlayerCount++;
+			if (State->TeamID == EPlayerTeam::TEAM_Blue)
+			{
+				LastBluePlayerIndex = State->PlayerIndex;
+			}
 			AllPlayers.Add(Cast<APlayerController>(Player));
+
+			FString MapName = GetWorld()->GetMapName();
+			if (!MapName.Contains(TEXT("Lobby")))
+			{
+				ANetGameState* GState = GetGameState<ANetGameState>();
+				if (GState)
+				{
+					GState->RemainingTime = 30.0f;
+				}
+				GetWorld()->GetTimerManager().SetTimer(GameTimerHandle, this, &ANetGameMode::OnGameTimerExpired, 30.0f, false);
+				GetWorld()->GetTimerManager().SetTimer(CountdownTimerHandle, this, &ANetGameMode::UpdateRemainingTime, 1.0f, true);
+			}
 		}
 		else
 		{
-			State->TeamID = State->Result == EGameResults::RESULT_Won ? EPlayerTeam::TEAM_Blue : EPlayerTeam::TEAM_Red;
+			// Subsequent games: The new Blue player index has already been calculated and stored in LastBluePlayerIndex by EndGame().
+			State->TeamID = State->PlayerIndex == LastBluePlayerIndex ? EPlayerTeam::TEAM_Blue : EPlayerTeam::TEAM_Red;
 		}
 
 		if (State->TeamID == EPlayerTeam::TEAM_Blue)
@@ -53,6 +100,9 @@ AActor* ANetGameMode::AssignTeamAndPlayerStart(AController* Player)
 		{
 			Start = GetPlayerStart("Red", PlayerStartIndex++);
 		}
+
+		// Sync the replicated Data struct with the newly assigned team ID so that clients receive the update
+		State->Data.TeamID = State->TeamID;
 	}
 	return Start;
 }
@@ -90,13 +140,18 @@ void ANetGameMode::AvatarsOverlapped(ANetAvatar* AvatarA, ANetAvatar* AvatarB)
 	if (StateA == nullptr || StateB == nullptr) return;
 	if (StateA->TeamID == StateB->TeamID) return;
 
+	GetWorld()->GetTimerManager().ClearTimer(GameTimerHandle);
+	GetWorld()->GetTimerManager().ClearTimer(CountdownTimerHandle);
+
 	if (StateA->TeamID == EPlayerTeam::TEAM_Blue)
 	{
 		GState->WinningPlayer = StateB->PlayerIndex;
+		CatcherPlayerIndex = StateB->PlayerIndex;
 	}
 	else
 	{
 		GState->WinningPlayer = StateA->PlayerIndex;
+		CatcherPlayerIndex = StateA->PlayerIndex;
 	}
 
 	AvatarA->GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
@@ -124,15 +179,83 @@ void ANetGameMode::AvatarsOverlapped(ANetAvatar* AvatarA, ANetAvatar* AvatarB)
 	GetWorld()->GetTimerManager().SetTimer(EndGameTimerHandle, this, &ANetGameMode::EndGame, 2.5f, false);
 }
 
+void ANetGameMode::OnGameTimerExpired()
+{
+	GetWorld()->GetTimerManager().ClearTimer(CountdownTimerHandle);
+	ANetGameState* GState = GetGameState<ANetGameState>();
+	if (GState == nullptr || GState->WinningPlayer >= 0) return;
+
+	// Timer ran out: Blue team player survived and wins, Red team loses.
+	int BluePlayerIndex = -1;
+	for (APlayerController* Player : AllPlayers)
+	{
+		if (Player)
+		{
+			ANetPlayerState* PState = Player->GetPlayerState<ANetPlayerState>();
+			if (PState && PState->TeamID == EPlayerTeam::TEAM_Blue)
+			{
+				BluePlayerIndex = PState->PlayerIndex;
+				break;
+			}
+		}
+	}
+
+	GState->WinningPlayer = BluePlayerIndex;
+	GState->OnVictory();
+
+	for (APlayerController* Player : AllPlayers)
+	{
+		if (Player)
+		{
+			ANetPlayerState* PState = Player->GetPlayerState<ANetPlayerState>();
+			if (PState)
+			{
+				if (PState->TeamID == EPlayerTeam::TEAM_Blue)
+				{
+					PState->Result = EGameResults::RESULT_Won;
+				}
+				else
+				{
+					PState->Result = EGameResults::RESULT_Lost;
+				}
+			}
+		}
+	}
+
+	FTimerHandle EndGameTimerHandle;
+	GetWorld()->GetTimerManager().SetTimer(EndGameTimerHandle, this, &ANetGameMode::EndGame, 2.5f, false);
+}
+
 void ANetGameMode::EndGame()
 {
 	PlayerStartIndex = 0;
 	TotalGames++;
 	
+	int NewBlueIndex = -1;
+	if (CatcherPlayerIndex >= 0)
+	{
+		// Catcher wins: Catcher is the new Blue player
+		NewBlueIndex = CatcherPlayerIndex;
+	}
+	else
+	{
+		// Blue wins (timer ran out): Select next player sequentially as the new Blue player
+		NewBlueIndex = (LastBluePlayerIndex + 1) % TotalPlayerCount;
+	}
+	LastBluePlayerIndex = NewBlueIndex;
+	
+	// Reset catcher index for the new round
+	CatcherPlayerIndex = -1;
+
+	// Clear game timer (safety check)
+	GetWorld()->GetTimerManager().ClearTimer(GameTimerHandle);
+	GetWorld()->GetTimerManager().ClearTimer(CountdownTimerHandle);
+
 	ANetGameState* GState = GetGameState<ANetGameState>();
 	if (GState)
 	{
 		GState->WinningPlayer = -1;
+		GState->RemainingTime = 30.0f;
 	}
 
 	for (APlayerController* Player : AllPlayers)
@@ -147,8 +270,22 @@ void ANetGameMode::EndGame()
 		RestartPlayer(Player);
 	}
 
+	// Restart the 30-second game timer for the new round
+	GetWorld()->GetTimerManager().SetTimer(GameTimerHandle, this, &ANetGameMode::OnGameTimerExpired, 30.0f, false);
+	// Restart the countdown timer for the new round
+	GetWorld()->GetTimerManager().SetTimer(CountdownTimerHandle, this, &ANetGameMode::UpdateRemainingTime, 1.0f, true);
+
 	if (GState)
 	{
 		GState->TriggerRestart();
+	}
+}
+
+void ANetGameMode::UpdateRemainingTime()
+{
+	ANetGameState* GState = GetGameState<ANetGameState>();
+	if (GState)
+	{
+		GState->RemainingTime = FMath::Max(0.0f, GState->RemainingTime - 1.0f);
 	}
 }

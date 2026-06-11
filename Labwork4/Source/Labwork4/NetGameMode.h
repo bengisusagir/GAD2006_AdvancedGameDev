@@ -23,16 +23,27 @@ public:
 
 	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 	UFUNCTION(BlueprintCallable)
 	void AvatarsOverlapped(ANetAvatar* AvatarA, ANetAvatar* AvatarB);
 
 	UFUNCTION(BlueprintCallable)
 	void EndGame();
 
+	void OnGameTimerExpired();
+	void UpdateRemainingTime();
+
 private:
 	int TotalPlayerCount;
 	int TotalGames;
 	int PlayerStartIndex;
+	int CatcherPlayerIndex;
+	int LastBluePlayerIndex;
+
+	FTimerHandle GameTimerHandle;
+	FTimerHandle CountdownTimerHandle;
 
 	UPROPERTY()
 	TArray<APlayerController*> AllPlayers;

@@ -22,6 +22,9 @@ public:
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Winner)
 	int WinningPlayer;
 
+	UPROPERTY(BlueprintReadOnly, Replicated)
+	float RemainingTime;
+
 	UFUNCTION()
 	void OnRep_Winner();
 
